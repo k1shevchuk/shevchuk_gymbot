@@ -1,0 +1,9 @@
+aiogram>=3.7,<4
+SQLAlchemy>=2.0
+psycopg[binary]
+alembic
+apscheduler
+pandas
+openpyxl
+pydantic-settings
+python-dateutil

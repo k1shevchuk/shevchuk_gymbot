@@ -306,3 +306,4 @@ def test_confirm_reset_removes_reply_keyboard():
     assert callback.answered[-1] == "Данные удалены"
     assert isinstance(callback.message.answers[-1][1], ReplyKeyboardRemove)
     assert remaining == 0
+

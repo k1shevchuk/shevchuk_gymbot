@@ -240,3 +240,4 @@ async def set_weekend(message: Message, state: FSMContext) -> None:
     await _save_user(message.from_user.id, reminder_weekend=validated)
     await message.answer(f"Выходные: {validated}")
     await state.clear()
+

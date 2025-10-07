@@ -4,7 +4,6 @@ import asyncio
 from typing import Any, Callable, Optional
 
 from sqlalchemy import create_engine
-from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
@@ -15,14 +14,7 @@ class Base(DeclarativeBase):
 
 
 _settings = get_settings()
-_db_url = make_url(_settings.database_url)
-connect_args = {"check_same_thread": False} if _db_url.get_backend_name() == "sqlite" else {}
-engine = create_engine(
-    _settings.database_url,
-    future=True,
-    echo=False,
-    connect_args=connect_args,
-)
+engine = create_engine(_settings.database_url, future=True, echo=False)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, class_=Session)
 
 

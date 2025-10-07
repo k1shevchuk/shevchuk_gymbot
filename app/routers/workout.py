@@ -28,8 +28,8 @@ class ExerciseCard:
     exercise_id: int
     exercise_name: str
     target_sets: int
-    target_reps: int
-    target_rir: Optional[float]
+    target_reps: str
+    target_rir: str
     completed_sets: int
     last_result: Optional[str]
 
@@ -115,13 +115,23 @@ async def _load_exercise_card(workout_id: int, exercise_id: int) -> Optional[Exe
             sets_str = ", ".join(f"{s.weight:.1f}×{s.reps}" for s in sets)
             avg_rir = sum((s.rir or 0) for s in sets) / len(sets) if sets else 0
             last_result = f"{last_workout.started_at:%d.%m.%Y}: {sets_str} (RIR {avg_rir:.1f})"
+        target_reps = (
+            workout_ex.target_reps_display
+            or (str(workout_ex.target_reps) if workout_ex.target_reps is not None else "-")
+        )
+        target_rir = (
+            workout_ex.target_rir_display
+            or (
+                f"{workout_ex.target_rir:g}" if workout_ex.target_rir is not None else "-"
+            )
+        )
         return ExerciseCard(
             workout_id=workout_id,
             exercise_id=exercise_id,
             exercise_name=exercise.name if exercise else "Упражнение",
             target_sets=workout_ex.target_sets,
-            target_reps=workout_ex.target_reps,
-            target_rir=workout_ex.target_rir,
+            target_reps=target_reps,
+            target_rir=target_rir,
             completed_sets=completed_sets,
             last_result=last_result,
         )
@@ -272,7 +282,7 @@ async def _render_and_send_card(message: Message, state: FSMContext, workout_id:
     last_line = f"\nПрошлый раз: {card.last_result}" if card.last_result else ""
     text = (
         f"{card.exercise_name}\n"
-        f"План: {card.target_sets}×{card.target_reps} (RIR {card.target_rir if card.target_rir is not None else '-'})\n"
+        f"План: {card.target_sets}×{card.target_reps} (RIR {card.target_rir})\n"
         f"Сделано сетов: {card.completed_sets}{last_line}"
     )
     await message.answer(text, reply_markup=workout_control_keyboard(card.exercise_id, has_prev=bool(completed)))

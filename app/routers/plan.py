@@ -30,7 +30,7 @@ async def _prepare_plan_text(telegram_id: int) -> str:
         lines = ["Следующая тренировка:"]
         for item in plan:
             lines.append(
-                f"• {item.name}: {item.target_sets}×{item.target_reps} (RIR {item.target_rir or '-'})"
+                f"• {item.name}: {item.target_sets}×{item.reps_text()} (RIR {item.rir_text()})"
             )
         last_workout = (
             session.query(Workout)

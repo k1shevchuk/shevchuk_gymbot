@@ -159,6 +159,38 @@ def test_import_dataframe_respects_user_timezone():
         assert aware_start == datetime(2024, 5, 31, 21, 0, tzinfo=timezone.utc)
 
 
+def test_import_dataframe_accepts_range_targets():
+    async def _run():
+        telegram_id = 5555
+        df = pd.DataFrame(
+            [
+                {
+                    "Date": "2025-10-06",
+                    "Workout": "Пн",
+                    "Exercise": "Присед со штангой / Safety-bar",
+                    "Set": 5,
+                    "Reps": "3–5",
+                    "Weight": 0,
+                    "RIR": "1–2",
+                    "Notes": "",
+                }
+            ]
+        )
+
+        return await _import_dataframe(telegram_id, df)
+
+    workouts_count, sets_count = asyncio.run(_run())
+
+    assert workouts_count == 1
+    assert sets_count == 0
+
+    with SessionLocal() as session:
+        workout_exercise = session.query(WorkoutExercise).one()
+        assert workout_exercise.target_sets == 5
+        assert workout_exercise.target_reps == 3
+        assert workout_exercise.target_reps_display == "3–5"
+        assert workout_exercise.target_rir_display == "1–2"
+
 def test_ensure_workout_creates_plan_with_timezone():
     result = asyncio.run(_ensure_workout(telegram_id=555))
 

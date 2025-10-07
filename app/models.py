@@ -67,14 +67,15 @@ class WorkoutExercise(Base):
     workout_id: Mapped[int] = mapped_column(ForeignKey("workouts.id", ondelete="CASCADE"), nullable=False)
     exercise_id: Mapped[int] = mapped_column(ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False)
     target_sets: Mapped[int] = mapped_column(Integer, default=3)
-    target_reps: Mapped[int] = mapped_column(Integer, default=8)
+    target_reps: Mapped[Optional[int]] = mapped_column(Integer)
+    target_reps_display: Mapped[Optional[str]] = mapped_column(String(32))
     target_rir: Mapped[Optional[float]] = mapped_column(Float)
+    target_rir_display: Mapped[Optional[str]] = mapped_column(String(32))
 
     workout: Mapped[Workout] = relationship("Workout", back_populates="exercises")
     exercise: Mapped[Exercise] = relationship("Exercise", back_populates="workout_exercises")
 
     __table_args__ = (UniqueConstraint("workout_id", "exercise_id", name="uq_workout_exercise"),)
-
 
 class Set(Base):
     __tablename__ = "sets"

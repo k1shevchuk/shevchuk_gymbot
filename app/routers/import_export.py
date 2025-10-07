@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, time, timedelta, timezone
 from tempfile import NamedTemporaryFile
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -105,6 +106,74 @@ async def import_xlsx_prompt(callback: CallbackQuery, state: FSMContext) -> None
     await state.set_state(ImportState.waiting_for_file)
 
 
+def _clean_cell(value) -> Optional[str]:
+    if pd.isna(value):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text
+
+
+def _normalize(text: Optional[str]) -> Optional[str]:
+    if text is None:
+        return None
+    return text.replace("\u2013", "-").replace("\u2212", "-")
+
+
+def _first_int(text: Optional[str]) -> Optional[int]:
+    if not text:
+        return None
+    normalized = _normalize(text)
+    if not normalized:
+        return None
+    match = re.search(r"\d+", normalized)
+    if not match:
+        return None
+    try:
+        return int(match.group())
+    except ValueError:
+        return None
+
+
+def _pure_int(text: Optional[str]) -> Optional[int]:
+    if not text:
+        return None
+    normalized = _normalize(text)
+    if normalized and re.fullmatch(r"\d+", normalized):
+        try:
+            return int(normalized)
+        except ValueError:
+            return None
+    return None
+
+
+def _first_float(text: Optional[str]) -> Optional[float]:
+    if not text:
+        return None
+    normalized = _normalize(text)
+    if not normalized:
+        return None
+    match = re.search(r"\d+(?:[.,]\d+)?", normalized)
+    if not match:
+        return None
+    try:
+        return float(match.group().replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _to_float(value) -> Optional[float]:
+    if pd.isna(value):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    cleaned = _clean_cell(value)
+    if cleaned is None:
+        return None
+    return _first_float(cleaned)
+
+
 async def _import_dataframe(telegram_id: int, dataframe: pd.DataFrame) -> Tuple[int, int]:
     db = get_db()
 
@@ -120,6 +189,7 @@ async def _import_dataframe(telegram_id: int, dataframe: pd.DataFrame) -> Tuple[
         }
         inserted_workouts = 0
         inserted_sets = 0
+        max_sets_cache: Dict[str, Optional[int]] = {}
         for _, row in dataframe.iterrows():
             date_value = pd.to_datetime(row["Date"]).to_pydatetime()
             if date_value.tzinfo is None:
@@ -151,6 +221,20 @@ async def _import_dataframe(telegram_id: int, dataframe: pd.DataFrame) -> Tuple[
                 session.add(exercise)
                 session.flush()
                 exercises_cache[exercise_name] = exercise
+            reps_text = _clean_cell(row["Reps"])
+            rir_text = _clean_cell(row["RIR"])
+            notes_text = _clean_cell(row["Notes"])
+            set_text = _clean_cell(row["Set"])
+            if exercise_name not in max_sets_cache:
+                exercise_sets = []
+                for value in dataframe[dataframe["Exercise"].astype(str).str.strip() == exercise_name]["Set"]:
+                    exercise_sets.append(_first_int(_clean_cell(value)))
+                max_sets_cache[exercise_name] = (
+                    max((v for v in exercise_sets if v is not None), default=None)
+                )
+            target_sets_value = max_sets_cache.get(exercise_name) or 0
+            target_reps_value = _first_int(reps_text)
+            target_rir_value = _first_float(rir_text)
             workout_ex = (
                 session.query(WorkoutExercise)
                 .filter(WorkoutExercise.workout_id == workout.id, WorkoutExercise.exercise_id == exercise.id)
@@ -160,23 +244,41 @@ async def _import_dataframe(telegram_id: int, dataframe: pd.DataFrame) -> Tuple[
                 workout_ex = WorkoutExercise(
                     workout_id=workout.id,
                     exercise_id=exercise.id,
-                    target_sets=int(dataframe[dataframe["Exercise"] == exercise_name]["Set"].max()),
-                    target_reps=int(row["Reps"]),
-                    target_rir=float(row["RIR"]) if pd.notna(row["RIR"]) else None,
+                    target_sets=target_sets_value,
+                    target_reps=target_reps_value,
+                    target_reps_display=reps_text,
+                    target_rir=target_rir_value,
+                    target_rir_display=rir_text,
                 )
                 session.add(workout_ex)
                 session.flush()
-            new_set = Set(
-                workout_id=workout.id,
-                exercise_id=exercise.id,
-                set_index=int(row["Set"]),
-                reps=int(row["Reps"]),
-                weight=float(row["Weight"]),
-                rir=float(row["RIR"]) if pd.notna(row["RIR"]) else None,
-                note=str(row["Notes"]) if pd.notna(row["Notes"]) else None,
-            )
-            session.add(new_set)
-            inserted_sets += 1
+            else:
+                if target_sets_value:
+                    workout_ex.target_sets = target_sets_value
+                if target_reps_value is not None:
+                    workout_ex.target_reps = target_reps_value
+                if reps_text:
+                    workout_ex.target_reps_display = reps_text
+                if target_rir_value is not None:
+                    workout_ex.target_rir = target_rir_value
+                if rir_text:
+                    workout_ex.target_rir_display = rir_text
+            set_index_value = _pure_int(set_text)
+            reps_value = _pure_int(reps_text)
+            weight_value = _to_float(row["Weight"])
+            rir_value = _first_float(rir_text)
+            if set_index_value is not None and reps_value is not None:
+                new_set = Set(
+                    workout_id=workout.id,
+                    exercise_id=exercise.id,
+                    set_index=set_index_value,
+                    reps=reps_value,
+                    weight=weight_value if weight_value is not None else 0.0,
+                    rir=rir_value,
+                    note=notes_text,
+                )
+                session.add(new_set)
+                inserted_sets += 1
         return inserted_workouts, inserted_sets
 
     return await db.run(persist)

@@ -13,9 +13,25 @@ from ..models import Exercise, Set, Workout, WorkoutExercise
 class PlanExercise:
     name: str
     target_sets: int
-    target_reps: int
+    target_reps: Optional[int]
     target_rir: Optional[float]
+    target_reps_display: Optional[str] = None
+    target_rir_display: Optional[str] = None
     muscle_group: Optional[str] = None
+
+    def reps_text(self) -> str:
+        if self.target_reps_display:
+            return self.target_reps_display
+        if self.target_reps is None:
+            return "-"
+        return str(self.target_reps)
+
+    def rir_text(self) -> str:
+        if self.target_rir_display:
+            return self.target_rir_display
+        if self.target_rir is None:
+            return "-"
+        return f"{self.target_rir:g}"
 
 
 DEFAULT_PLAN: List[PlanExercise] = [
@@ -56,7 +72,11 @@ def ensure_plan_for_workout(session: Session, workout: Workout, plan: Iterable[P
             exercise_id=exercise.id,
             target_sets=item.target_sets,
             target_reps=item.target_reps,
+            target_reps_display=item.target_reps_display
+            or (str(item.target_reps) if item.target_reps is not None else None),
             target_rir=item.target_rir,
+            target_rir_display=item.target_rir_display
+            or (f"{item.target_rir:g}" if item.target_rir is not None else None),
         )
         session.add(workout_exercise)
 

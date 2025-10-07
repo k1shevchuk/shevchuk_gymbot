@@ -23,7 +23,8 @@ def _settings_keyboard(user: User):
     builder.button(text="Единицы", callback_data="settings:units")
     builder.button(text="RIR/RPE", callback_data="settings:rir")
     builder.button(text="Напоминания", callback_data="settings:reminder")
-    builder.adjust(2)
+    builder.button(text="Полный сброс", callback_data="settings:reset")
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 
@@ -46,6 +47,17 @@ async def _save_user(telegram_id: int, **updates) -> User:
         return user
 
     return await db.run(save)
+
+
+async def _reset_user_data(telegram_id: int) -> None:
+    db = get_db()
+
+    def reset(session):
+        user = session.query(User).filter_by(telegram_id=telegram_id).one_or_none()
+        if user is not None:
+            session.delete(user)
+
+    await db.run(reset)
 
 
 @router.message(F.text == "Настройки")
@@ -135,6 +147,49 @@ async def toggle_reminder(callback: CallbackQuery) -> None:
     updated = await _save_user(callback.from_user.id, reminder_enabled=not user.reminder_enabled)
     await callback.answer("Сохранено")
     await callback.message.edit_reply_markup(reminder_toggle_keyboard(updated.reminder_enabled))
+
+
+def _reset_confirmation_keyboard():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Да, удалить", callback_data="settings:reset_confirm")
+    builder.button(text="Отмена", callback_data="settings:reset_cancel")
+    builder.adjust(1, 1)
+    return builder.as_markup()
+
+
+@router.callback_query(F.data == "settings:reset")
+async def ask_reset_confirmation(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await callback.message.answer(
+        "Удалить все ваши данные? Это действие необратимо.",
+        reply_markup=_reset_confirmation_keyboard(),
+    )
+
+
+@router.callback_query(F.data == "settings:reset_confirm")
+async def confirm_reset(callback: CallbackQuery) -> None:
+    await _reset_user_data(callback.from_user.id)
+    await callback.answer("Данные удалены")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001
+        pass
+    user = await _load_user(callback.from_user.id)
+    await callback.message.answer(
+        "Все данные сброшены. Вы как новый пользователь.",
+        reply_markup=_settings_keyboard(user),
+    )
+
+
+@router.callback_query(F.data == "settings:reset_cancel")
+async def cancel_reset(callback: CallbackQuery) -> None:
+    await callback.answer("Отменено")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001
+        pass
+    user = await _load_user(callback.from_user.id)
+    await callback.message.answer("Сброс отменён.", reply_markup=_settings_keyboard(user))
 
 
 def _validate_time(value: str) -> str:

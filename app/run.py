@@ -15,8 +15,11 @@ logging.basicConfig(level=logging.INFO)
 
 
 async def main() -> None:
-    settings = get_settings()
-    bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    app_settings = get_settings()
+    bot = Bot(
+        token=app_settings.bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
     dp = Dispatcher()
 
     dp.include_router(workout.router)

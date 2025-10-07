@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from aiogram import F, Router
@@ -34,6 +34,14 @@ class ExerciseCard:
     last_result: Optional[str]
 
 
+def _ensure_aware_datetime(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 async def _ensure_workout(telegram_id: int) -> Dict[str, int]:
     db = get_db()
 
@@ -46,9 +54,11 @@ async def _ensure_workout(telegram_id: int) -> Dict[str, int]:
             .first()
         )
         if workout is None:
-            workout = Workout(user_id=user.id, started_at=datetime.utcnow())
+            workout = Workout(user_id=user.id, started_at=datetime.now(timezone.utc))
             session.add(workout)
             session.flush()
+        else:
+            workout.started_at = _ensure_aware_datetime(workout.started_at)
         ensure_plan_for_workout(session, workout, default_plan())
         session.flush()
         first_exercise = (
@@ -202,8 +212,13 @@ async def _finish_workout(workout_id: int) -> str:
         workout = session.get(Workout, workout_id)
         if workout is None:
             raise ValueError("Workout not found")
+        workout.started_at = _ensure_aware_datetime(workout.started_at)
+        workout.finished_at = _ensure_aware_datetime(workout.finished_at)
         if workout.finished_at is None:
-            workout.finished_at = datetime.utcnow()
+            workout.finished_at = datetime.now(timezone.utc)
+        session.flush()
+        started_at = workout.started_at or datetime.now(timezone.utc)
+        finished_at = workout.finished_at
         sets = (
             session.query(Set)
             .filter(Set.workout_id == workout_id)
@@ -217,11 +232,11 @@ async def _finish_workout(workout_id: int) -> str:
 
         lines: List[str] = [
             f"Тренировка завершена!",
-            f"Начало: {workout.started_at:%d.%m.%Y %H:%M}",
-            f"Завершено: {workout.finished_at:%d.%m.%Y %H:%M}",
+            f"Начало: {started_at:%d.%m.%Y %H:%M}",
+            f"Завершено: {finished_at:%d.%m.%Y %H:%M}",
             f"Тоннаж: {total_tonnage:.1f}",
         ]
-        duration = workout.finished_at - workout.started_at
+        duration = finished_at - started_at
         lines.append(f"Длительность: {duration}")
 
         for exercise_id, exercise_sets in per_exercise.items():

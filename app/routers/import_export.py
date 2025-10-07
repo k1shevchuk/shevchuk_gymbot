@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta, timezone
 from tempfile import NamedTemporaryFile
 from typing import Dict, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from aiogram import F, Router
@@ -109,6 +110,10 @@ async def _import_dataframe(telegram_id: int, dataframe: pd.DataFrame) -> Tuple[
 
     def persist(session):
         user = get_or_create_user(session, telegram_id)
+        try:
+            user_tz = ZoneInfo(user.tz or "UTC")
+        except Exception:
+            user_tz = timezone.utc
         workouts_cache: Dict[Tuple[str, str], Workout] = {}
         exercises_cache: Dict[str, Exercise] = {
             ex.name: ex for ex in session.query(Exercise).all()
@@ -117,13 +122,22 @@ async def _import_dataframe(telegram_id: int, dataframe: pd.DataFrame) -> Tuple[
         inserted_sets = 0
         for _, row in dataframe.iterrows():
             date_value = pd.to_datetime(row["Date"]).to_pydatetime()
-            workout_key = (row["Workout"], date_value.strftime("%Y-%m-%d"))
+            if date_value.tzinfo is None:
+                localized_start = datetime.combine(
+                    date_value.date(),
+                    time.min,
+                    tzinfo=user_tz,
+                )
+            else:
+                localized_start = date_value.astimezone(user_tz)
+            start_utc = localized_start.astimezone(timezone.utc)
+            workout_key = (row["Workout"], start_utc.strftime("%Y-%m-%d"))
             workout = workouts_cache.get(workout_key)
             if workout is None:
                 workout = Workout(
                     user_id=user.id,
-                    started_at=datetime.combine(date_value.date(), datetime.min.time()),
-                    finished_at=datetime.combine(date_value.date(), datetime.min.time()) + timedelta(hours=1),
+                    started_at=start_utc,
+                    finished_at=start_utc + timedelta(hours=1),
                     notes=str(row["Workout"]),
                 )
                 session.add(workout)
@@ -151,6 +165,7 @@ async def _import_dataframe(telegram_id: int, dataframe: pd.DataFrame) -> Tuple[
                     target_rir=float(row["RIR"]) if pd.notna(row["RIR"]) else None,
                 )
                 session.add(workout_ex)
+                session.flush()
             new_set = Set(
                 workout_id=workout.id,
                 exercise_id=exercise.id,
@@ -174,7 +189,7 @@ async def handle_import_file(message: Message, state: FSMContext) -> None:
         await message.answer("Нужен XLSX-файл")
         return
     with NamedTemporaryFile(delete=False) as tmp:
-        await document.download(destination=tmp.name)
+        await message.bot.download(document, destination=tmp.name)
         df = pd.read_excel(tmp.name)
     missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
     if missing:

@@ -455,3 +455,4 @@ async def complete_workout(callback: CallbackQuery, state: FSMContext) -> None:
     summary = await _finish_workout(workout_id)
     await callback.message.answer(summary)
     await state.clear()
+

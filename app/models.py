@@ -77,7 +77,6 @@ class WorkoutExercise(Base):
 
     __table_args__ = (UniqueConstraint("workout_id", "exercise_id", name="uq_workout_exercise"),)
 
-
 class Set(Base):
     __tablename__ = "sets"
 

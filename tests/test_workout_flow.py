@@ -1,5 +1,9 @@
 import os
+<<<<<<< HEAD
 from datetime import date, datetime, timedelta, timezone
+=======
+from datetime import datetime, timedelta, timezone
+>>>>>>> origin/main
 from pathlib import Path
 import sys
 
@@ -18,14 +22,21 @@ os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{TEST_DB_PATH}"
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.db import Base, SessionLocal, engine  # noqa: E402
+<<<<<<< HEAD
 from app.models import Metric, PR, Exercise, Set, User, Workout, WorkoutExercise  # noqa: E402
+=======
+from app.models import Exercise, Set, User, Workout, WorkoutExercise  # noqa: E402
+>>>>>>> origin/main
 from app.routers.import_export import _import_dataframe  # noqa: E402
 from app.routers.workout import (  # noqa: E402
     _ensure_aware_datetime,
     _ensure_workout,
     _finish_workout,
 )
+<<<<<<< HEAD
 from app.routers.settings import _load_user, _reset_user_data  # noqa: E402
+=======
+>>>>>>> origin/main
 
 
 @pytest.fixture(autouse=True)
@@ -163,6 +174,7 @@ async def test_ensure_workout_creates_plan_with_timezone():
             .all()
         )
         assert len(exercises) > 0
+<<<<<<< HEAD
 
 
 @pytest.mark.asyncio
@@ -218,3 +230,5 @@ async def test_reset_user_data_deletes_all_records():
     user = await _load_user(telegram_id)
     assert user.id is not None
     assert user.telegram_id == telegram_id
+=======
+>>>>>>> origin/main

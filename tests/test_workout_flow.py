@@ -1,9 +1,6 @@
+import asyncio
 import os
-<<<<<<< HEAD
 from datetime import date, datetime, timedelta, timezone
-=======
-from datetime import datetime, timedelta, timezone
->>>>>>> origin/main
 from pathlib import Path
 import sys
 
@@ -22,21 +19,15 @@ os.environ["DATABASE_URL"] = f"sqlite+pysqlite:///{TEST_DB_PATH}"
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.db import Base, SessionLocal, engine  # noqa: E402
-<<<<<<< HEAD
 from app.models import Metric, PR, Exercise, Set, User, Workout, WorkoutExercise  # noqa: E402
-=======
-from app.models import Exercise, Set, User, Workout, WorkoutExercise  # noqa: E402
->>>>>>> origin/main
 from app.routers.import_export import _import_dataframe  # noqa: E402
 from app.routers.workout import (  # noqa: E402
     _ensure_aware_datetime,
     _ensure_workout,
     _finish_workout,
 )
-<<<<<<< HEAD
-from app.routers.settings import _load_user, _reset_user_data  # noqa: E402
-=======
->>>>>>> origin/main
+from app.routers.settings import _load_user, _reset_user_data, confirm_reset  # noqa: E402
+from aiogram.types import ReplyKeyboardRemove
 
 
 @pytest.fixture(autouse=True)
@@ -47,69 +38,75 @@ def _setup_database():
     Base.metadata.drop_all(engine)
 
 
-@pytest.mark.asyncio
-async def test_finish_workout_summary_has_duration_and_1rm():
-    with SessionLocal() as session:
-        user = User(telegram_id=1)
-        session.add(user)
-        session.flush()
-        start = datetime.now(timezone.utc) - timedelta(hours=1)
-        workout = Workout(
-            user_id=user.id,
-            started_at=start,
-            finished_at=start + timedelta(hours=1),
-            notes="Test",
-        )
-        session.add(workout)
-        exercise = Exercise(name="Тестовое упражнение")
-        session.add(exercise)
-        session.flush()
-        workout_set = Set(
-            workout_id=workout.id,
-            exercise_id=exercise.id,
-            set_index=1,
-            reps=5,
-            weight=100.0,
-            rir=1.0,
-        )
-        session.add(workout_set)
-        session.commit()
+def test_finish_workout_summary_has_duration_and_1rm():
+    async def _run():
+        with SessionLocal() as session:
+            user = User(telegram_id=1)
+            session.add(user)
+            session.flush()
+            start = datetime.now(timezone.utc) - timedelta(hours=1)
+            workout = Workout(
+                user_id=user.id,
+                started_at=start,
+                finished_at=start + timedelta(hours=1),
+                notes="Test",
+            )
+            session.add(workout)
+            exercise = Exercise(name="Тестовое упражнение")
+            session.add(exercise)
+            session.flush()
+            workout_set = Set(
+                workout_id=workout.id,
+                exercise_id=exercise.id,
+                set_index=1,
+                reps=5,
+                weight=100.0,
+                rir=1.0,
+            )
+            session.add(workout_set)
+            session.commit()
 
-    summary = await _finish_workout(workout.id)
+        return await _finish_workout(workout.id)
+
+    summary = asyncio.run(_run())
 
     assert "Длительность: 1:00:00" in summary
     assert "1RM оценка" in summary
 
 
-@pytest.mark.asyncio
-async def test_import_dataframe_creates_timezone_aware_records():
-    telegram_id = 42
-    df = pd.DataFrame(
-        [
-            {
-                "Date": "2024-05-01",
-                "Workout": "Day A",
-                "Exercise": "Squat",
-                "Set": 1,
-                "Reps": 5,
-                "Weight": 100,
-                "RIR": 2,
-                "Notes": "",
-            },
-            {
-                "Date": "2024-05-01",
-                "Workout": "Day A",
-                "Exercise": "Squat",
-                "Set": 2,
-                "Reps": 5,
-                "Weight": 100,
-                "RIR": 1,
-                "Notes": "",
-            },
-        ]
-    )
+def test_import_dataframe_creates_timezone_aware_records():
+    async def _run():
+        telegram_id = 42
+        df = pd.DataFrame(
+            [
+                {
+                    "Date": "2024-05-01",
+                    "Workout": "Day A",
+                    "Exercise": "Squat",
+                    "Set": 1,
+                    "Reps": 5,
+                    "Weight": 100,
+                    "RIR": 2,
+                    "Notes": "",
+                },
+                {
+                    "Date": "2024-05-01",
+                    "Workout": "Day A",
+                    "Exercise": "Squat",
+                    "Set": 2,
+                    "Reps": 5,
+                    "Weight": 100,
+                    "RIR": 1,
+                    "Notes": "",
+                },
+            ]
+        )
 
-    workouts_count, sets_count = await _import_dataframe(telegram_id, df)
+        workouts_count, sets_count = await _import_dataframe(telegram_id, df)
+
+        return telegram_id, workouts_count, sets_count
+
+    telegram_id, workouts_count, sets_count = asyncio.run(_run())
 
     assert workouts_count == 1
     assert sets_count == 2
@@ -125,34 +122,36 @@ async def test_import_dataframe_creates_timezone_aware_records():
         assert len(sets) == 2
         assert all(s.rir is not None for s in sets)
 
-    summary = await _finish_workout(workout.id)
+    summary = asyncio.run(_finish_workout(workout.id))
     assert "Тренировка завершена!" in summary
 
 
-@pytest.mark.asyncio
-async def test_import_dataframe_respects_user_timezone():
-    telegram_id = 77
-    with SessionLocal() as session:
-        user = User(telegram_id=telegram_id, tz="Europe/Moscow")
-        session.add(user)
-        session.commit()
+def test_import_dataframe_respects_user_timezone():
+    async def _run():
+        telegram_id = 77
+        with SessionLocal() as session:
+            user = User(telegram_id=telegram_id, tz="Europe/Moscow")
+            session.add(user)
+            session.commit()
 
-    df = pd.DataFrame(
-        [
-            {
-                "Date": "2024-06-01",
-                "Workout": "Day B",
-                "Exercise": "Bench",
-                "Set": 1,
-                "Reps": 8,
-                "Weight": 80,
-                "RIR": 2,
-                "Notes": "",
-            }
-        ]
-    )
+        df = pd.DataFrame(
+            [
+                {
+                    "Date": "2024-06-01",
+                    "Workout": "Day B",
+                    "Exercise": "Bench",
+                    "Set": 1,
+                    "Reps": 8,
+                    "Weight": 80,
+                    "RIR": 2,
+                    "Notes": "",
+                }
+            ]
+        )
 
-    await _import_dataframe(telegram_id, df)
+        await _import_dataframe(telegram_id, df)
+
+    asyncio.run(_run())
 
     with SessionLocal() as session:
         workout = session.query(Workout).one()
@@ -160,9 +159,8 @@ async def test_import_dataframe_respects_user_timezone():
         assert aware_start == datetime(2024, 5, 31, 21, 0, tzinfo=timezone.utc)
 
 
-@pytest.mark.asyncio
-async def test_ensure_workout_creates_plan_with_timezone():
-    result = await _ensure_workout(telegram_id=555)
+def test_ensure_workout_creates_plan_with_timezone():
+    result = asyncio.run(_ensure_workout(telegram_id=555))
 
     with SessionLocal() as session:
         workout = session.get(Workout, result["workout_id"])
@@ -174,61 +172,105 @@ async def test_ensure_workout_creates_plan_with_timezone():
             .all()
         )
         assert len(exercises) > 0
-<<<<<<< HEAD
 
 
-@pytest.mark.asyncio
-async def test_reset_user_data_deletes_all_records():
-    telegram_id = 999
-    with SessionLocal() as session:
-        user = User(telegram_id=telegram_id, tz="Europe/Moscow", units="kg")
-        session.add(user)
-        session.flush()
-        exercise = Exercise(name="Reset Exercise")
-        session.add(exercise)
-        session.flush()
-        workout = Workout(user_id=user.id)
-        session.add(workout)
-        session.flush()
-        workout_exercise = WorkoutExercise(
-            workout_id=workout.id,
-            exercise_id=exercise.id,
-            target_sets=3,
-            target_reps=8,
-        )
-        session.add(workout_exercise)
-        workout_set = Set(
-            workout_id=workout.id,
-            exercise_id=exercise.id,
-            set_index=1,
-            reps=5,
-            weight=100.0,
-            rir=1.0,
-        )
-        session.add(workout_set)
-        metric = Metric(user_id=user.id, date=date(2024, 1, 1), bodyweight=80.0)
-        session.add(metric)
-        pr = PR(
-            user_id=user.id,
-            exercise_id=exercise.id,
-            date=date(2024, 1, 1),
-            reps=5,
-            weight=120.0,
-        )
-        session.add(pr)
-        session.commit()
+def test_reset_user_data_deletes_all_records():
+    async def _run():
+        telegram_id = 999
+        with SessionLocal() as session:
+            user = User(telegram_id=telegram_id, tz="Europe/Moscow", units="kg")
+            session.add(user)
+            session.flush()
+            exercise = Exercise(name="Reset Exercise")
+            session.add(exercise)
+            session.flush()
+            workout = Workout(user_id=user.id)
+            session.add(workout)
+            session.flush()
+            workout_exercise = WorkoutExercise(
+                workout_id=workout.id,
+                exercise_id=exercise.id,
+                target_sets=3,
+                target_reps=8,
+            )
+            session.add(workout_exercise)
+            workout_set = Set(
+                workout_id=workout.id,
+                exercise_id=exercise.id,
+                set_index=1,
+                reps=5,
+                weight=100.0,
+                rir=1.0,
+            )
+            session.add(workout_set)
+            metric = Metric(user_id=user.id, date=date(2024, 1, 1), bodyweight=80.0)
+            session.add(metric)
+            pr = PR(
+                user_id=user.id,
+                exercise_id=exercise.id,
+                date=date(2024, 1, 1),
+                reps=5,
+                weight=120.0,
+            )
+            session.add(pr)
+            session.commit()
 
-    await _reset_user_data(telegram_id)
+        await _reset_user_data(telegram_id)
 
-    with SessionLocal() as session:
-        assert session.query(User).filter_by(telegram_id=telegram_id).count() == 0
-        assert session.query(Workout).count() == 0
-        assert session.query(Set).count() == 0
-        assert session.query(Metric).count() == 0
-        assert session.query(PR).count() == 0
+        with SessionLocal() as session:
+            assert session.query(User).filter_by(telegram_id=telegram_id).count() == 0
+            assert session.query(Workout).count() == 0
+            assert session.query(Set).count() == 0
+            assert session.query(Metric).count() == 0
+            assert session.query(PR).count() == 0
 
-    user = await _load_user(telegram_id)
+        return await _load_user(telegram_id), telegram_id
+
+    user, telegram_id = asyncio.run(_run())
     assert user.id is not None
     assert user.telegram_id == telegram_id
-=======
->>>>>>> origin/main
+
+
+class DummyMessage:
+    def __init__(self):
+        self.edited_markup = None
+        self.answers = []
+
+    async def edit_reply_markup(self, reply_markup=None):
+        self.edited_markup = reply_markup
+
+    async def answer(self, text, reply_markup=None):
+        self.answers.append((text, reply_markup))
+
+
+class DummyCallback:
+    def __init__(self, telegram_id):
+        self.from_user = type("_U", (), {"id": telegram_id})()
+        self.message = DummyMessage()
+        self.answered = []
+
+    async def answer(self, text=""):
+        self.answered.append(text)
+
+
+def test_confirm_reset_removes_reply_keyboard():
+    async def _run():
+        telegram_id = 31337
+        with SessionLocal() as session:
+            session.add(User(telegram_id=telegram_id))
+            session.commit()
+
+        callback = DummyCallback(telegram_id)
+
+        await confirm_reset(callback)
+
+        with SessionLocal() as session:
+            count = session.query(User).filter_by(telegram_id=telegram_id).count()
+
+        return callback, count
+
+    callback, remaining = asyncio.run(_run())
+
+    assert callback.answered[-1] == "Данные удалены"
+    assert isinstance(callback.message.answers[-1][1], ReplyKeyboardRemove)
+    assert remaining == 0

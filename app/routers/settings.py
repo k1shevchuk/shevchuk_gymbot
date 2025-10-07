@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from ..db import get_db
@@ -174,10 +174,9 @@ async def confirm_reset(callback: CallbackQuery) -> None:
         await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:  # noqa: BLE001
         pass
-    user = await _load_user(callback.from_user.id)
     await callback.message.answer(
-        "Все данные сброшены. Вы как новый пользователь.",
-        reply_markup=_settings_keyboard(user),
+        "Все данные сброшены. Отправьте /start, чтобы начать заново.",
+        reply_markup=ReplyKeyboardRemove(),
     )
 
 
